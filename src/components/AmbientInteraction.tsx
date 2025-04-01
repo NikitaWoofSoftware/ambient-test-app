@@ -531,49 +531,25 @@ export function AmbientInteraction() {
         
         // If we still don't have a valid range, try the super tight approach as last resort
         if (!validTickRange) {
-          // Try all these fallback spacing options until one works
+          // Try all these fallback spacing options
           const fallbackSpacings = [60, 12, 6, 2, 1];
           let fallbackWorkingRange = null;
           
-          // Test each fallback spacing option
-          for (const spacing of fallbackSpacings) {
-            try {
-              console.log(`Testing fallback spacing ${spacing}...`);
-              // Create a tick range aligned to this spacing
-              const lowerAligned = Math.floor(currentTick / spacing) * spacing;
-              const upperAligned = lowerAligned + spacing;
-              
-              const fallbackRange = [lowerAligned, upperAligned];
-              console.log(`Generated range with spacing ${spacing}:`, fallbackRange);
-              
-              // Try to populate a transaction with this range to see if it's valid
-              let testPopulate;
-              if (usingBaseToken) {
-                testPopulate = await pool.mintRangeBase.populateTransaction(
-                  amountInFloat, 
-                  fallbackRange,
-                  [currentSpotPrice * 0.99, currentSpotPrice * 1.01], // Very tight price limits for test
-                  { surplus: false }
-                );
-              } else {
-                testPopulate = await pool.mintRangeQuote.populateTransaction(
-                  amountInFloat, 
-                  fallbackRange,
-                  [currentSpotPrice * 0.99, currentSpotPrice * 1.01], // Very tight price limits for test
-                  { surplus: false }
-                );
-              }
-              
-              // If we got here without error, this range might work
-              if (testPopulate && testPopulate.data) {
-                fallbackWorkingRange = fallbackRange;
-                console.log(`✅ Fallback spacing ${spacing} generated valid transaction data`);
-                break;
-              }
-            } catch (e) {
-              console.log(`❌ Fallback spacing ${spacing} failed:`, e.message);
-            }
-          }
+          console.log("Trying fallback spacing options:", fallbackSpacings);
+          
+          // Just use the first spacing option (60) - can't test without populateTransaction
+          const spacing = fallbackSpacings[0];
+          console.log(`Using fallback spacing ${spacing} without pre-validation`);
+          
+          // Create a tick range aligned to this spacing
+          const lowerAligned = Math.floor(currentTick / spacing) * spacing;
+          const upperAligned = lowerAligned + spacing;
+          
+          const fallbackRange = [lowerAligned, upperAligned];
+          console.log(`Generated range with spacing ${spacing}:`, fallbackRange);
+          
+          // Use this range
+          fallbackWorkingRange = fallbackRange;
           
           if (fallbackWorkingRange) {
             validTickRange = fallbackWorkingRange;
@@ -599,40 +575,59 @@ export function AmbientInteraction() {
         try {
           console.log("Executing concentrated liquidity transaction...");
           
-          // First get transaction details to log for debugging
-          let txDetails;
+          // Log parameters we're about to use
+          console.log("=== DETAILED TX PARAMETERS FOR DEBUGGING ===");
+          console.log("Transaction type:", usingBaseToken ? "mintRangeBase" : "mintRangeQuote");
+          console.log("From address:", address);
+          console.log("To contract address:", DEX_ADDRESS);
+          console.log("Parameters:");
+          console.log("- Amount:", amountInFloat);
+          console.log("- Tick range:", JSON.stringify(validTickRange));
+          console.log("- Price limits:", JSON.stringify(priceLimits));
+          console.log("- Options:", JSON.stringify({ surplus: false }));
+          console.log("Contract:", DEX_ADDRESS);
+          console.log("=========================================");
           
-          if (usingBaseToken) {
-            console.log("Preparing mintRangeBase transaction...");
-            // Get transaction data before sending
-            try {
-              txDetails = await pool.mintRangeBase.populateTransaction(
-                amountInFloat, 
-                validTickRange, 
-                priceLimits, 
-                { surplus: false }
-              );
-              
-              // Log detailed transaction info for simulation/debugging
-              console.log("=== DETAILED TX INFO FOR DEBUGGING ===");
-              console.log("Transaction type: mintRangeBase");
-              console.log("From address:", address);
-              console.log("To address:", txDetails.to);
-              console.log("Value (ETH):", txDetails.value?.toString() || "0");
-              console.log("Gas limit:", txDetails.gasLimit?.toString() || "auto");
-              console.log("Raw transaction data:", txDetails.data);
-              console.log("Parameters:");
-              console.log("- Amount:", amountInFloat);
-              console.log("- Tick range:", validTickRange);
-              console.log("- Price limits:", priceLimits);
-              console.log("- Options:", { surplus: false });
-              console.log("=======================================");
-              
-            } catch (populateError) {
-              console.error("Error populating transaction:", populateError);
-              throw populateError;
-            }
+          // Instrument the ethers provider to capture the transaction
+          try {
+            // Use SDK's debug properties if available
+            console.log("SDK debug info:");
+            if (pool._baseAddress) console.log("Base token address:", pool._baseAddress);
+            if (pool._quoteAddress) console.log("Quote token address:", pool._quoteAddress);
+            if (pool._isFeeEnabled) console.log("Fee enabled:", pool._isFeeEnabled);
+            if (typeof pool._poolIdx !== "undefined") console.log("Pool index:", pool._poolIdx);
             
+            // Log internal structures of the pool object if possible
+            console.log("Pool object keys:", Object.keys(pool));
+            
+            // Save original send transaction for restoration
+            const originalSendTransaction = signer.sendTransaction;
+            
+            // Replace with our instrumented version
+            signer.sendTransaction = async (txRequest) => {
+              // Log the actual transaction details
+              console.log("=== CAPTURED RAW TRANSACTION ===");
+              console.log("From:", txRequest.from);
+              console.log("To:", txRequest.to);
+              console.log("Value:", txRequest.value?.toString() || "0");
+              console.log("Data:", txRequest.data);
+              console.log("Gas limit:", txRequest.gasLimit?.toString() || "auto");
+              console.log("==============================");
+              
+              // Restore original immediately
+              signer.sendTransaction = originalSendTransaction;
+              
+              // Forward to the original method
+              return originalSendTransaction.call(signer, txRequest);
+            };
+          } catch (instrumentError) {
+            console.error("Error instrumenting signer:", instrumentError);
+            // Continue anyway - this is just for debugging
+          }
+          
+          let tx;
+          if (usingBaseToken) {
+            console.log("Calling mintRangeBase to create concentrated liquidity position");
             // Добавляем ликвидность, используя base token (e.g., ETH)
             tx = await pool.mintRangeBase(
               amountInFloat, 
@@ -641,36 +636,7 @@ export function AmbientInteraction() {
               { surplus: false }
             );
           } else {
-            console.log("Preparing mintRangeQuote transaction...");
-            // Get transaction data before sending
-            try {
-              txDetails = await pool.mintRangeQuote.populateTransaction(
-                amountInFloat, 
-                validTickRange, 
-                priceLimits, 
-                { surplus: false }
-              );
-              
-              // Log detailed transaction info for simulation/debugging
-              console.log("=== DETAILED TX INFO FOR DEBUGGING ===");
-              console.log("Transaction type: mintRangeQuote");
-              console.log("From address:", address);
-              console.log("To address:", txDetails.to);
-              console.log("Value (ETH):", txDetails.value?.toString() || "0");
-              console.log("Gas limit:", txDetails.gasLimit?.toString() || "auto");
-              console.log("Raw transaction data:", txDetails.data);
-              console.log("Parameters:");
-              console.log("- Amount:", amountInFloat);
-              console.log("- Tick range:", validTickRange);
-              console.log("- Price limits:", priceLimits);
-              console.log("- Options:", { surplus: false });
-              console.log("=======================================");
-              
-            } catch (populateError) {
-              console.error("Error populating transaction:", populateError);
-              throw populateError;
-            }
-            
+            console.log("Calling mintRangeQuote to create concentrated liquidity position");
             // Добавляем ликвидность, используя quote token (e.g., KING)
             tx = await pool.mintRangeQuote(
               amountInFloat, 
@@ -706,38 +672,47 @@ export function AmbientInteraction() {
             const tighterPriceLimits = [currentSpotPrice * 0.95, currentSpotPrice * 1.05];
             console.log("Using tighter price limits for retry:", tighterPriceLimits);
             
-            // Log detailed transaction info for simulation before retry
-            let retryTxDetails;
+            // Log retry parameters
+            console.log("=== RETRY PARAMETERS FOR DEBUGGING ===");
+            console.log("Transaction type:", usingBaseToken ? "mintRangeBase (RETRY)" : "mintRangeQuote (RETRY)");
+            console.log("From address:", address);
+            console.log("To contract address:", DEX_ADDRESS);
+            console.log("Parameters for retry:");
+            console.log("- Amount:", amountInFloat);
+            console.log("- Tick range (last resort):", JSON.stringify(lastResortRange));
+            console.log("- Tick spacing used:", tickSpacing);
+            console.log("- Price limits (tighter):", JSON.stringify(tighterPriceLimits));
+            console.log("- Options:", JSON.stringify({ surplus: false }));
+            console.log("======================================");
+            
+            // Instrument the signer again for the retry
+            try {
+              // Save original send transaction for restoration
+              const originalSendTransaction = signer.sendTransaction;
+              
+              // Replace with our instrumented version for retry
+              signer.sendTransaction = async (txRequest) => {
+                // Log the actual transaction details for retry
+                console.log("=== CAPTURED RAW RETRY TRANSACTION ===");
+                console.log("From:", txRequest.from);
+                console.log("To:", txRequest.to);
+                console.log("Value:", txRequest.value?.toString() || "0");
+                console.log("Data:", txRequest.data);
+                console.log("Gas limit:", txRequest.gasLimit?.toString() || "auto");
+                console.log("=====================================");
+                
+                // Restore original immediately
+                signer.sendTransaction = originalSendTransaction;
+                
+                // Forward to the original method
+                return originalSendTransaction.call(signer, txRequest);
+              };
+            } catch (instrumentError) {
+              console.error("Error instrumenting signer for retry:", instrumentError);
+            }
             
             if (usingBaseToken) {
-              try {
-                console.log("Preparing RETRY mintRangeBase transaction...");
-                retryTxDetails = await pool.mintRangeBase.populateTransaction(
-                  amountInFloat, 
-                  lastResortRange, 
-                  tighterPriceLimits, 
-                  { surplus: false }
-                );
-                
-                // Log detailed transaction info for retry
-                console.log("=== DETAILED RETRY TX INFO FOR DEBUGGING ===");
-                console.log("Transaction type: mintRangeBase (RETRY)");
-                console.log("From address:", address);
-                console.log("To address:", retryTxDetails.to);
-                console.log("Value (ETH):", retryTxDetails.value?.toString() || "0");
-                console.log("Gas limit:", retryTxDetails.gasLimit?.toString() || "auto");
-                console.log("Raw transaction data:", retryTxDetails.data);
-                console.log("Parameters for retry:");
-                console.log("- Amount:", amountInFloat);
-                console.log("- Tick range (last resort):", lastResortRange);
-                console.log("- Tick spacing used:", tickSpacing);
-                console.log("- Price limits (tighter):", tighterPriceLimits);
-                console.log("- Options:", { surplus: false });
-                console.log("===========================================");
-              } catch (populateRetryError) {
-                console.error("Error populating retry transaction:", populateRetryError);
-              }
-              
+              console.log("Calling mintRangeBase with minimum range (RETRY)");
               tx = await pool.mintRangeBase(
                 amountInFloat, 
                 lastResortRange, 
@@ -745,34 +720,7 @@ export function AmbientInteraction() {
                 { surplus: false }
               );
             } else {
-              try {
-                console.log("Preparing RETRY mintRangeQuote transaction...");
-                retryTxDetails = await pool.mintRangeQuote.populateTransaction(
-                  amountInFloat, 
-                  lastResortRange, 
-                  tighterPriceLimits, 
-                  { surplus: false }
-                );
-                
-                // Log detailed transaction info for retry
-                console.log("=== DETAILED RETRY TX INFO FOR DEBUGGING ===");
-                console.log("Transaction type: mintRangeQuote (RETRY)");
-                console.log("From address:", address);
-                console.log("To address:", retryTxDetails.to);
-                console.log("Value (ETH):", retryTxDetails.value?.toString() || "0");
-                console.log("Gas limit:", retryTxDetails.gasLimit?.toString() || "auto");
-                console.log("Raw transaction data:", retryTxDetails.data);
-                console.log("Parameters for retry:");
-                console.log("- Amount:", amountInFloat);
-                console.log("- Tick range (last resort):", lastResortRange);
-                console.log("- Tick spacing used:", tickSpacing);
-                console.log("- Price limits (tighter):", tighterPriceLimits);
-                console.log("- Options:", { surplus: false });
-                console.log("===========================================");
-              } catch (populateRetryError) {
-                console.error("Error populating retry transaction:", populateRetryError);
-              }
-              
+              console.log("Calling mintRangeQuote with minimum range (RETRY)");
               tx = await pool.mintRangeQuote(
                 amountInFloat, 
                 lastResortRange, 
