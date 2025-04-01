@@ -394,70 +394,93 @@ export function AmbientInteraction() {
         
         setStatus(`Current price: ${currentDisplayPrice.toFixed(2)}, getting valid tick range...`);
         
-        // First try: Use SDK's displayToNeighborTicks for proper tick spacing
+        // First try: Use SDK's displayToNeighborTicks to get valid ticks that respect spacing
         let validTickRange;
+        
+        // First, try Ambient-specific method to convert directly from display prices
         try {
-          // Get neighboring ticks that respect the protocol's tick spacing
-          const neighborTicks = await pool.displayToNeighborTicks(currentDisplayPrice);
-          console.log("Neighbor ticks from SDK:", neighborTicks);
-          
-          // Find ticks that are closest to our desired price range
-          // Convert user price range to ticks for comparison
-          const userLowerTick = Math.floor(Math.log(Math.sqrt(lowerPriceVal)) / Math.log(1.0001));
-          const userUpperTick = Math.ceil(Math.log(Math.sqrt(upperPriceVal)) / Math.log(1.0001));
-          
-          // Find the closest valid lower and upper ticks to user's range
-          let lowerValidTick = null;
-          let upperValidTick = null;
-          
-          // Sort ticks in ascending order
-          const sortedTicks = [...neighborTicks].sort((a, b) => a - b);
-          
-          // Find lower tick (closest valid tick below or equal to userLowerTick)
-          for (const tick of sortedTicks) {
-            if (tick <= userLowerTick) {
-              lowerValidTick = tick;
-            } else {
-              break;
+          console.log("Attempting to convert display price range to valid ticks...");
+          // If the function exists, this is the most reliable way to get valid ticks
+          if (typeof pool.displayToPinTick === 'function') {
+            // Try to get valid ticks directly from user's price input
+            console.log("Using pool.displayToPinTick() to get valid ticks");
+            // This function is mentioned in the SDK code and should convert display prices to valid ticks
+            try {
+              const lowerTick = await pool.displayToPinTick(lowerPriceVal, 'lower');
+              const upperTick = await pool.displayToPinTick(upperPriceVal, 'upper');
+              if (lowerTick !== undefined && upperTick !== undefined && lowerTick < upperTick) {
+                validTickRange = [lowerTick, upperTick];
+                console.log("Found valid tick range using displayToPinTick:", validTickRange);
+              }
+            } catch (pinError) {
+              console.error("Error using displayToPinTick:", pinError);
             }
-          }
-          
-          // If no valid tick found below userLowerTick, use the lowest available
-          if (lowerValidTick === null && sortedTicks.length > 0) {
-            lowerValidTick = sortedTicks[0];
-          }
-          
-          // Find upper tick (closest valid tick above or equal to userUpperTick)
-          for (const tick of [...sortedTicks].reverse()) {
-            if (tick >= userUpperTick) {
-              upperValidTick = tick;
-            } else {
-              break;
-            }
-          }
-          
-          // If no valid tick found above userUpperTick, use the highest available
-          if (upperValidTick === null && sortedTicks.length > 0) {
-            upperValidTick = sortedTicks[sortedTicks.length - 1];
-          }
-          
-          // Ensure we have valid ticks and proper order
-          if (lowerValidTick !== null && upperValidTick !== null && lowerValidTick < upperValidTick) {
-            validTickRange = [lowerValidTick, upperValidTick];
-            console.log("Found valid tick range based on user price range:", validTickRange);
-            
-            // Convert these ticks back to prices for display
-            const lowerTickPrice = Math.pow(1.0001, lowerValidTick);
-            const upperTickPrice = Math.pow(1.0001, upperValidTick);
-            console.log("Price range from valid ticks:", [
-              lowerTickPrice * lowerTickPrice, 
-              upperTickPrice * upperTickPrice
-            ]);
-          } else {
-            console.log("Could not find valid tick range from neighbor ticks");
           }
         } catch (error) {
-          console.error("Error getting neighbor ticks:", error);
+          console.error("Error during direct price conversion:", error);
+        }
+        
+        // If the above didn't work, try the neighbor ticks approach
+        if (!validTickRange) {
+          try {
+            console.log("Trying alternative approach with neighbor ticks...");
+            
+            // Ask for more neighboring ticks to increase chance of finding valid range
+            const neighborTicks = await pool.displayToNeighborTicks(currentDisplayPrice, 10);
+            console.log("Neighbor ticks from SDK (10 neighbors):", neighborTicks);
+            
+            // Detect tick spacing from neighbor ticks
+            let detectedSpacing = 0;
+            if (neighborTicks.length >= 2) {
+              const sortedNeighbors = [...neighborTicks].sort((a, b) => a - b);
+              for (let i = 1; i < sortedNeighbors.length; i++) {
+                const diff = Math.abs(sortedNeighbors[i] - sortedNeighbors[i-1]);
+                if (diff > 0) {
+                  if (detectedSpacing === 0 || diff < detectedSpacing) {
+                    detectedSpacing = diff;
+                  }
+                }
+              }
+            }
+            console.log("Detected tick spacing from neighbors:", detectedSpacing);
+            
+            // If we detected spacing, align user's desired range to it
+            if (detectedSpacing > 0) {
+              // Convert user price range to ticks
+              const userLowerTick = Math.floor(Math.log(Math.sqrt(lowerPriceVal)) / Math.log(1.0001));
+              const userUpperTick = Math.ceil(Math.log(Math.sqrt(upperPriceVal)) / Math.log(1.0001));
+              console.log("User's range in ticks (before alignment):", [userLowerTick, userUpperTick]);
+              
+              // Align to detected spacing
+              const alignedLowerTick = Math.floor(userLowerTick / detectedSpacing) * detectedSpacing;
+              const alignedUpperTick = Math.ceil(userUpperTick / detectedSpacing) * detectedSpacing;
+              
+              // Make sure they're different
+              if (alignedLowerTick === alignedUpperTick) {
+                // Add one spacing to upper tick if they're the same
+                const adjustedUpperTick = alignedUpperTick + detectedSpacing;
+                validTickRange = [alignedLowerTick, adjustedUpperTick];
+              } else {
+                validTickRange = [alignedLowerTick, alignedUpperTick];
+              }
+              
+              console.log("Aligned tick range using detected spacing:", validTickRange);
+              
+              // Convert these ticks back to prices for verification
+              const lowerPrice = Math.pow(Math.pow(1.0001, validTickRange[0]), 2);
+              const upperPrice = Math.pow(Math.pow(1.0001, validTickRange[1]), 2);
+              console.log("Price range from aligned ticks:", [lowerPrice, upperPrice]);
+            } else {
+              // Just use the narrowest tick range from neighbors as last resort
+              const sortedTicks = [...neighborTicks].sort((a, b) => a - b);
+              if (sortedTicks.length >= 2) {
+                validTickRange = [sortedTicks[0], sortedTicks[sortedTicks.length - 1]];
+                console.log("Using narrowest available tick range from neighbors:", validTickRange);
+              }
+            }
+          } catch (error) {
+            console.error("Error using neighbor ticks approach:", error);
+          }
         }
         
         // Second try: Try tick ranges based on spot tick if first method fails
@@ -508,8 +531,58 @@ export function AmbientInteraction() {
         
         // If we still don't have a valid range, try the super tight approach as last resort
         if (!validTickRange) {
-          validTickRange = [currentTick - 1, currentTick + 1];
-          console.log("Using super tight range as last resort:", validTickRange);
+          // Try all these fallback spacing options until one works
+          const fallbackSpacings = [60, 12, 6, 2, 1];
+          let fallbackWorkingRange = null;
+          
+          // Test each fallback spacing option
+          for (const spacing of fallbackSpacings) {
+            try {
+              console.log(`Testing fallback spacing ${spacing}...`);
+              // Create a tick range aligned to this spacing
+              const lowerAligned = Math.floor(currentTick / spacing) * spacing;
+              const upperAligned = lowerAligned + spacing;
+              
+              const fallbackRange = [lowerAligned, upperAligned];
+              console.log(`Generated range with spacing ${spacing}:`, fallbackRange);
+              
+              // Try to populate a transaction with this range to see if it's valid
+              let testPopulate;
+              if (usingBaseToken) {
+                testPopulate = await pool.mintRangeBase.populateTransaction(
+                  amountInFloat, 
+                  fallbackRange,
+                  [currentSpotPrice * 0.99, currentSpotPrice * 1.01], // Very tight price limits for test
+                  { surplus: false }
+                );
+              } else {
+                testPopulate = await pool.mintRangeQuote.populateTransaction(
+                  amountInFloat, 
+                  fallbackRange,
+                  [currentSpotPrice * 0.99, currentSpotPrice * 1.01], // Very tight price limits for test
+                  { surplus: false }
+                );
+              }
+              
+              // If we got here without error, this range might work
+              if (testPopulate && testPopulate.data) {
+                fallbackWorkingRange = fallbackRange;
+                console.log(`✅ Fallback spacing ${spacing} generated valid transaction data`);
+                break;
+              }
+            } catch (e) {
+              console.log(`❌ Fallback spacing ${spacing} failed:`, e.message);
+            }
+          }
+          
+          if (fallbackWorkingRange) {
+            validTickRange = fallbackWorkingRange;
+            console.log("Using fallback spacing range:", validTickRange);
+          } else {
+            // Last resort - super tight range
+            validTickRange = [currentTick - 1, currentTick + 1];
+            console.log("Using super tight range as last resort:", validTickRange);
+          }
         }
         
         // Set price limits for slippage protection
@@ -526,7 +599,40 @@ export function AmbientInteraction() {
         try {
           console.log("Executing concentrated liquidity transaction...");
           
+          // First get transaction details to log for debugging
+          let txDetails;
+          
           if (usingBaseToken) {
+            console.log("Preparing mintRangeBase transaction...");
+            // Get transaction data before sending
+            try {
+              txDetails = await pool.mintRangeBase.populateTransaction(
+                amountInFloat, 
+                validTickRange, 
+                priceLimits, 
+                { surplus: false }
+              );
+              
+              // Log detailed transaction info for simulation/debugging
+              console.log("=== DETAILED TX INFO FOR DEBUGGING ===");
+              console.log("Transaction type: mintRangeBase");
+              console.log("From address:", address);
+              console.log("To address:", txDetails.to);
+              console.log("Value (ETH):", txDetails.value?.toString() || "0");
+              console.log("Gas limit:", txDetails.gasLimit?.toString() || "auto");
+              console.log("Raw transaction data:", txDetails.data);
+              console.log("Parameters:");
+              console.log("- Amount:", amountInFloat);
+              console.log("- Tick range:", validTickRange);
+              console.log("- Price limits:", priceLimits);
+              console.log("- Options:", { surplus: false });
+              console.log("=======================================");
+              
+            } catch (populateError) {
+              console.error("Error populating transaction:", populateError);
+              throw populateError;
+            }
+            
             // Добавляем ликвидность, используя base token (e.g., ETH)
             tx = await pool.mintRangeBase(
               amountInFloat, 
@@ -535,6 +641,36 @@ export function AmbientInteraction() {
               { surplus: false }
             );
           } else {
+            console.log("Preparing mintRangeQuote transaction...");
+            // Get transaction data before sending
+            try {
+              txDetails = await pool.mintRangeQuote.populateTransaction(
+                amountInFloat, 
+                validTickRange, 
+                priceLimits, 
+                { surplus: false }
+              );
+              
+              // Log detailed transaction info for simulation/debugging
+              console.log("=== DETAILED TX INFO FOR DEBUGGING ===");
+              console.log("Transaction type: mintRangeQuote");
+              console.log("From address:", address);
+              console.log("To address:", txDetails.to);
+              console.log("Value (ETH):", txDetails.value?.toString() || "0");
+              console.log("Gas limit:", txDetails.gasLimit?.toString() || "auto");
+              console.log("Raw transaction data:", txDetails.data);
+              console.log("Parameters:");
+              console.log("- Amount:", amountInFloat);
+              console.log("- Tick range:", validTickRange);
+              console.log("- Price limits:", priceLimits);
+              console.log("- Options:", { surplus: false });
+              console.log("=======================================");
+              
+            } catch (populateError) {
+              console.error("Error populating transaction:", populateError);
+              throw populateError;
+            }
+            
             // Добавляем ликвидность, используя quote token (e.g., KING)
             tx = await pool.mintRangeQuote(
               amountInFloat, 
@@ -566,18 +702,81 @@ export function AmbientInteraction() {
             
             setStatus("First attempt failed. Trying with minimum possible range...");
             
+            // Try with even tighter price limits
+            const tighterPriceLimits = [currentSpotPrice * 0.95, currentSpotPrice * 1.05];
+            console.log("Using tighter price limits for retry:", tighterPriceLimits);
+            
+            // Log detailed transaction info for simulation before retry
+            let retryTxDetails;
+            
             if (usingBaseToken) {
+              try {
+                console.log("Preparing RETRY mintRangeBase transaction...");
+                retryTxDetails = await pool.mintRangeBase.populateTransaction(
+                  amountInFloat, 
+                  lastResortRange, 
+                  tighterPriceLimits, 
+                  { surplus: false }
+                );
+                
+                // Log detailed transaction info for retry
+                console.log("=== DETAILED RETRY TX INFO FOR DEBUGGING ===");
+                console.log("Transaction type: mintRangeBase (RETRY)");
+                console.log("From address:", address);
+                console.log("To address:", retryTxDetails.to);
+                console.log("Value (ETH):", retryTxDetails.value?.toString() || "0");
+                console.log("Gas limit:", retryTxDetails.gasLimit?.toString() || "auto");
+                console.log("Raw transaction data:", retryTxDetails.data);
+                console.log("Parameters for retry:");
+                console.log("- Amount:", amountInFloat);
+                console.log("- Tick range (last resort):", lastResortRange);
+                console.log("- Tick spacing used:", tickSpacing);
+                console.log("- Price limits (tighter):", tighterPriceLimits);
+                console.log("- Options:", { surplus: false });
+                console.log("===========================================");
+              } catch (populateRetryError) {
+                console.error("Error populating retry transaction:", populateRetryError);
+              }
+              
               tx = await pool.mintRangeBase(
                 amountInFloat, 
                 lastResortRange, 
-                priceLimits, 
+                tighterPriceLimits, // Using tighter price limits for retry
                 { surplus: false }
               );
             } else {
+              try {
+                console.log("Preparing RETRY mintRangeQuote transaction...");
+                retryTxDetails = await pool.mintRangeQuote.populateTransaction(
+                  amountInFloat, 
+                  lastResortRange, 
+                  tighterPriceLimits, 
+                  { surplus: false }
+                );
+                
+                // Log detailed transaction info for retry
+                console.log("=== DETAILED RETRY TX INFO FOR DEBUGGING ===");
+                console.log("Transaction type: mintRangeQuote (RETRY)");
+                console.log("From address:", address);
+                console.log("To address:", retryTxDetails.to);
+                console.log("Value (ETH):", retryTxDetails.value?.toString() || "0");
+                console.log("Gas limit:", retryTxDetails.gasLimit?.toString() || "auto");
+                console.log("Raw transaction data:", retryTxDetails.data);
+                console.log("Parameters for retry:");
+                console.log("- Amount:", amountInFloat);
+                console.log("- Tick range (last resort):", lastResortRange);
+                console.log("- Tick spacing used:", tickSpacing);
+                console.log("- Price limits (tighter):", tighterPriceLimits);
+                console.log("- Options:", { surplus: false });
+                console.log("===========================================");
+              } catch (populateRetryError) {
+                console.error("Error populating retry transaction:", populateRetryError);
+              }
+              
               tx = await pool.mintRangeQuote(
                 amountInFloat, 
                 lastResortRange, 
-                priceLimits, 
+                tighterPriceLimits, // Using tighter price limits for retry
                 { surplus: false }
               );
             }
