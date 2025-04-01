@@ -445,6 +445,35 @@ export function AmbientInteraction() {
                 // Create a simple [lower, upper] array with integers
                 validTickRange = [lowerTick, upperTick];
                 console.log("Found valid tick range using displayToPinTick:", validTickRange);
+                
+                // IMPORTANT: Check if current tick is outside the range
+                if (currentTick < lowerTick || currentTick > upperTick) {
+                  console.log("WARNING: Current tick is outside the range!");
+                  console.log("Current tick:", currentTick);
+                  console.log("Range:", validTickRange);
+                  
+                  if (usingBaseToken && currentTick < lowerTick) {
+                    console.warn("CRITICAL ERROR: Cannot add base token liquidity when price is below range!");
+                    console.warn("This will fail with 'D' error in determinePriceRange function");
+                    console.warn("You need to either: 1) Use quote token, or 2) Ensure range is below current price");
+                    
+                    // Automatically adjust range to include current tick if using base token
+                    const adjustedLower = Math.min(currentTick - 10, lowerTick);
+                    const adjustedUpper = upperTick;
+                    validTickRange = [adjustedLower, adjustedUpper];
+                    console.log("Auto-adjusted tick range to include current tick:", validTickRange);
+                  } else if (!usingBaseToken && currentTick > upperTick) {
+                    console.warn("CRITICAL ERROR: Cannot add quote token liquidity when price is above range!");
+                    console.warn("This will fail with 'D' error in determinePriceRange function");
+                    console.warn("You need to either: 1) Use base token, or 2) Ensure range is above current price");
+                    
+                    // Automatically adjust range to include current tick if using quote token
+                    const adjustedLower = lowerTick;
+                    const adjustedUpper = Math.max(currentTick + 10, upperTick);
+                    validTickRange = [adjustedLower, adjustedUpper];
+                    console.log("Auto-adjusted tick range to include current tick:", validTickRange);
+                  }
+                }
               }
             } catch (pinError) {
               console.error("Error using displayToPinTick:", pinError);
@@ -576,11 +605,23 @@ export function AmbientInteraction() {
           console.log(`Using fallback spacing ${spacing} without pre-validation`);
           
           // Create a tick range aligned to this spacing
-          const lowerAligned = Math.floor(currentTick / spacing) * spacing;
-          const upperAligned = lowerAligned + spacing;
+          // For base token: ensure range is AT or BELOW current tick (to avoid 'D' error)
+          // For quote token: ensure range is AT or ABOVE current tick (to avoid 'D' error)
+          let lowerAligned, upperAligned;
+          
+          if (usingBaseToken) {
+            // For base token, ensure current price is WITHIN or ABOVE the range
+            lowerAligned = Math.floor((currentTick - spacing) / spacing) * spacing; // Ensure it's below current
+            upperAligned = Math.ceil((currentTick + spacing) / spacing) * spacing; // Ensure it's above current
+          } else {
+            // For quote token, ensure current price is WITHIN or BELOW the range
+            lowerAligned = Math.floor((currentTick - spacing) / spacing) * spacing; // Ensure it's below current
+            upperAligned = Math.ceil((currentTick + spacing) / spacing) * spacing; // Ensure it's above current
+          }
           
           const fallbackRange = [lowerAligned, upperAligned];
-          console.log(`Generated range with spacing ${spacing}:`, fallbackRange);
+          console.log(`Generated range with spacing ${spacing} (token type: ${usingBaseToken ? 'base' : 'quote'}):`, fallbackRange);
+          console.log(`Current tick: ${currentTick} (should be between range for safety)`);
           
           // Use this range
           fallbackWorkingRange = fallbackRange;
@@ -600,8 +641,25 @@ export function AmbientInteraction() {
         const priceLimits = [currentSpotPrice * 0.85, currentSpotPrice * 1.15];
         console.log("Using price limits for slippage protection:", priceLimits);
         
-        // Display feedback to user about tick range translation
-        setStatus(`Adding liquidity in range [${lowerPriceVal}-${upperPriceVal}] using valid tick range [${validTickRange[0]}, ${validTickRange[1]}]...`);
+        // Display feedback to user about tick range translation with important warning
+        let statusMsg = `Adding liquidity in range [${lowerPriceVal}-${upperPriceVal}] using valid tick range [${validTickRange[0]}, ${validTickRange[1]}]...`;
+        
+        // Add token-specific warning about range requirements
+        if (usingBaseToken) {
+          // For base tokens (ETH), current price must be AT OR ABOVE lower tick
+          const isSafeRange = currentTick >= validTickRange[0];
+          if (!isSafeRange) {
+            statusMsg += " WARNING: Current price is below range - this may fail with 'D' error when using base token!";
+          }
+        } else {
+          // For quote tokens (KING), current price must be AT OR BELOW upper tick
+          const isSafeRange = currentTick <= validTickRange[1];
+          if (!isSafeRange) {
+            statusMsg += " WARNING: Current price is above range - this may fail with 'D' error when using quote token!";
+          }
+        }
+        
+        setStatus(statusMsg);
         
         // Execute the transaction
         let tx;
@@ -693,11 +751,39 @@ export function AmbientInteraction() {
           if (txError.message.includes("reverted: 'D'")) {
             console.log("Received 'D' error, trying with minimum possible range...");
             
-            // Try with a single-spacing range right at current tick
-            const lastResortRange = [
-              Math.floor(currentTick / tickSpacing) * tickSpacing,
-              Math.floor(currentTick / tickSpacing) * tickSpacing + tickSpacing
-            ];
+            // Create a range that must include the current tick, to avoid 'D' error
+            // The type of token (base/quote) determines how we must position the range
+            
+            let lastResortRange;
+            if (usingBaseToken) {
+              // For base token, current price must be AT OR ABOVE lower tick
+              // So ensure lower tick is at or below current tick
+              const safeLowerTick = Math.min(
+                Math.floor(currentTick / tickSpacing) * tickSpacing,  // Align down to spacing
+                currentTick - 1  // Ensure it's below current tick
+              );
+              const safeUpperTick = safeLowerTick + tickSpacing;  // Just one spacing above
+              lastResortRange = [safeLowerTick, safeUpperTick];
+              console.log("Base token lastResortRange (current tick MUST BE >= lower tick):", lastResortRange);
+            } else {
+              // For quote token, current price must be AT OR BELOW upper tick
+              // So ensure upper tick is at or above current tick
+              const safeUpperTick = Math.max(
+                Math.ceil(currentTick / tickSpacing) * tickSpacing,  // Align up to spacing
+                currentTick + 1  // Ensure it's above current tick
+              );
+              const safeLowerTick = safeUpperTick - tickSpacing;  // Just one spacing below
+              lastResortRange = [safeLowerTick, safeUpperTick];
+              console.log("Quote token lastResortRange (current tick MUST BE <= upper tick):", lastResortRange);
+            }
+            
+            // Check explicitly if the range is safe
+            const isSafeRange = usingBaseToken 
+              ? (currentTick >= lastResortRange[0]) // Base token requirement
+              : (currentTick <= lastResortRange[1]); // Quote token requirement
+            
+            console.log(`Range safety check: ${isSafeRange ? 'PASS' : 'FAIL'} for ${usingBaseToken ? 'base' : 'quote'} token`);
+            console.log("Current tick:", currentTick, "Range:", lastResortRange);
             console.log("Last resort tick range:", lastResortRange);
             
             setStatus("First attempt failed. Trying with minimum possible range...");
@@ -790,9 +876,15 @@ export function AmbientInteraction() {
         errorMessage = "Insufficient funds for transaction";
       } else if (errorMessage.includes("execution reverted: 'D'") || errorMessage.includes("reverted: 'D'")) {
         // Special handling for the specific 'D' error
-        errorMessage = "Transaction reverted with 'D' error - this typically indicates an invalid tick range. " +
-          "The 'D' error usually means the ticks aren't properly aligned with the required tick spacing or the range is too wide/narrow. " +
-          "Try a very narrow range close to the current price.";
+        if (usingBaseToken) {
+          errorMessage = "Transaction reverted with 'D' error: With base token (ETH), the CURRENT PRICE must be AT OR ABOVE your lower range boundary. " +
+            "The error occurs in determinePriceRange() contract function. " +
+            "Try setting a lower price range that is below the current price.";
+        } else {
+          errorMessage = "Transaction reverted with 'D' error: With quote token (KING), the CURRENT PRICE must be AT OR BELOW your upper range boundary. " +
+            "The error occurs in determinePriceRange() contract function. " +
+            "Try setting a higher price range that is above the current price.";
+        }
       } else if (errorMessage.includes("execution reverted")) {
         // Extract the revert reason if available
         const revertMatch = errorMessage.match(/reverted: (.+?)(?:,|$)/);
