@@ -636,10 +636,24 @@ export function AmbientInteraction() {
           }
         }
         
-        // Set price limits for slippage protection
-        // Using current spot price ±15% should be safe for execution
-        const priceLimits = [currentSpotPrice * 0.85, currentSpotPrice * 1.15];
-        console.log("Using price limits for slippage protection:", priceLimits);
+        // Set price limits for slippage protection based on CURRENT price, not target range
+        // IMPORTANT: minPrice MUST be <= current price, maxPrice MUST be >= current price
+        // Otherwise transaction will fail with "RC" error in snapCurveInRange
+        
+        // Create price limits based directly on current price, not related to target range
+        // Use a wide range as we don't care about slippage for testing
+        const minPrice = currentSpotPrice * 0.8; // 20% below current price to ensure it's below
+        const maxPrice = currentSpotPrice * 1.5; // 50% above current price to ensure it's above
+        
+        // Make sure our min price is NEVER above current price (would fail with RC error)
+        const safePriceLimits = [
+          Math.min(minPrice, currentSpotPrice * 0.99), // guarantee minPrice < currentPrice
+          Math.max(maxPrice, currentSpotPrice * 1.01)  // guarantee maxPrice > currentPrice
+        ];
+        
+        console.log("Raw current price:", currentSpotPrice);
+        console.log("Safe price limits (slippage protection):", safePriceLimits);
+        console.log("IMPORTANT: minPrice MUST be <= current price, maxPrice MUST be >= current price");
         
         // Display feedback to user about tick range translation with important warning
         let statusMsg = `Adding liquidity in range [${lowerPriceVal}-${upperPriceVal}] using valid tick range [${validTickRange[0]}, ${validTickRange[1]}]...`;
@@ -720,20 +734,28 @@ export function AmbientInteraction() {
           let tx;
           if (usingBaseToken) {
             console.log("Calling mintRangeBase to create concentrated liquidity position");
+            console.log("- Amount:", amountInFloat);
+            console.log("- Tick range:", validTickRange);
+            console.log("- Price limits:", safePriceLimits);
+            
             // Добавляем ликвидность, используя base token (e.g., ETH)
             tx = await pool.mintRangeBase(
               amountInFloat, 
               validTickRange, 
-              priceLimits, 
+              safePriceLimits, // Use safe price limits to avoid "RC" error
               { surplus: false }
             );
           } else {
             console.log("Calling mintRangeQuote to create concentrated liquidity position");
+            console.log("- Amount:", amountInFloat);
+            console.log("- Tick range:", validTickRange);
+            console.log("- Price limits:", safePriceLimits);
+            
             // Добавляем ликвидность, используя quote token (e.g., KING)
             tx = await pool.mintRangeQuote(
               amountInFloat, 
               validTickRange, 
-              priceLimits, 
+              safePriceLimits, // Use safe price limits to avoid "RC" error
               { surplus: false }
             );
           }
@@ -788,9 +810,15 @@ export function AmbientInteraction() {
             
             setStatus("First attempt failed. Trying with minimum possible range...");
             
-            // Try with even tighter price limits
-            const tighterPriceLimits = [currentSpotPrice * 0.95, currentSpotPrice * 1.05];
-            console.log("Using tighter price limits for retry:", tighterPriceLimits);
+            // Try with even safer price limits for retry
+            // CRITICAL: minPrice MUST be <= current price, maxPrice MUST be >= current price
+            // This was likely the cause of the "RC" error in snapCurveInRange function
+            const tighterPriceLimits = [
+              currentSpotPrice * 0.7,  // Go even further below current price (30% below)
+              currentSpotPrice * 1.7   // Go even further above current price (70% above)
+            ];
+            console.log("Using extra safe price limits for retry:", tighterPriceLimits);
+            console.log("Current price for reference:", currentSpotPrice);
             
             // Log retry parameters
             console.log("=== RETRY PARAMETERS FOR DEBUGGING ===");
@@ -885,6 +913,12 @@ export function AmbientInteraction() {
             "The error occurs in determinePriceRange() contract function. " +
             "Try setting a higher price range that is above the current price.";
         }
+      } else if (errorMessage.includes("execution reverted: 'RC'") || errorMessage.includes("reverted: 'RC'")) {
+        // Special handling for the specific 'RC' error in snapCurveInRange function
+        errorMessage = "Transaction reverted with 'RC' error: The current price is outside the allowed price limits. " +
+          "This error occurs in snapCurveInRange() function, which is a slippage protection check. " +
+          "The current code should already handle this, so this means there's a more fundamental issue " +
+          "with the price limits calculation.";
       } else if (errorMessage.includes("execution reverted")) {
         // Extract the revert reason if available
         const revertMatch = errorMessage.match(/reverted: (.+?)(?:,|$)/);
