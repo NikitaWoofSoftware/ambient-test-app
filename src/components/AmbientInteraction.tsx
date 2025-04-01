@@ -689,7 +689,7 @@ export function AmbientInteraction() {
           console.log("Parameters:");
           console.log("- Amount:", amountInFloat);
           console.log("- Tick range:", JSON.stringify(validTickRange));
-          console.log("- Price limits:", JSON.stringify(priceLimits));
+          console.log("- Price limits:", JSON.stringify(safePriceLimits));
           console.log("- Options:", JSON.stringify({ surplus: false }));
           console.log("Contract:", DEX_ADDRESS);
           console.log("=========================================");
