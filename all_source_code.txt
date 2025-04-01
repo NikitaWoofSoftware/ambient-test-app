@@ -1,0 +1,969 @@
+/*****************************
+ * PROJECT DEPENDENCIES
+ *****************************/
+
+// package.json dependencies:
+{
+  "@crocswap-libs/sdk": "^2.0.10",
+  "@rainbow-me/rainbowkit": "^2.2.4",
+  "@tanstack/react-query": "^5.71.1",
+  "ethers": "^6.13.5",
+  "react": "^19.0.0",
+  "react-dom": "^19.0.0",
+  "viem": "^2.24.2",
+  "wagmi": "^2.14.15"
+}
+
+// package.json devDependencies:
+{
+  "@eslint/js": "^9.21.0",
+  "@types/react": "^19.0.10",
+  "@types/react-dom": "^19.0.4",
+  "@vitejs/plugin-react": "^4.3.4",
+  "eslint": "^9.21.0",
+  "eslint-plugin-react-hooks": "^5.1.0",
+  "eslint-plugin-react-refresh": "^0.4.19",
+  "globals": "^15.15.0",
+  "typescript": "~5.7.2",
+  "typescript-eslint": "^8.24.1",
+  "vite": "^6.2.0"
+}
+
+/*****************************
+ * FILE: src/App.css
+ *****************************/
+
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+:root {
+  --primary-color: #646cff;
+  --border-color: #ddd;
+}
+
+.app-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  margin-bottom: 30px;
+  text-align: center;
+}
+
+.wallet-section {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 20px;
+}
+
+.ambient-interaction {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+.status-box {
+  background-color: #f8f9fa;
+  border: 1px solid var(--border-color);
+  color: #333333; /* Dark text for light background */
+  border-radius: 4px;
+  padding: 10px;
+  margin-bottom: 20px;
+  min-height: 40px;
+}
+
+/* Error state for status box */
+.status-box.error {
+  background-color: #ffebee;
+  border-color: #ffcdd2;
+  color: #c62828;
+}
+
+/* Success state for status box */
+.status-box.success {
+  background-color: #e8f5e9;
+  border-color: #c8e6c9;
+  color: #2e7d32;
+}
+
+.interaction-section {
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.interaction-section:last-child {
+  border-bottom: none;
+}
+
+.form-group {
+  margin-bottom: 15px;
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group label {
+  margin-bottom: 5px;
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+input {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+button {
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.2s;
+}
+
+button:hover:not(:disabled) {
+  background-color: #535bf2;
+}
+
+button:disabled {
+  background-color: #b3b3b3;
+  cursor: not-allowed;
+}
+
+
+/*****************************
+ * FILE: src/App.tsx
+ *****************************/
+
+import './App.css'
+import { ConnectWallet } from './components/ConnectWallet'
+import { AmbientInteraction } from './components/AmbientInteraction'
+
+function App() {
+  return (
+    <div className="app-container">
+      <div className="header">
+        <h1>Ambient DEX on Swell Chain</h1>
+        <p>A simple interface to test Ambient on Swell Chain only</p>
+        <div style={{ backgroundColor: '#f0f8ff', padding: '10px', borderRadius: '4px', marginTop: '10px' }}>
+          <strong>Note:</strong> This app works exclusively with Swell Chain (ID: 1923)
+        </div>
+        <div style={{ 
+          backgroundColor: '#fff8e6', 
+          padding: '15px', 
+          borderRadius: '4px', 
+          marginTop: '15px', 
+          fontSize: '0.9rem',
+          border: '1px solid #ffd54f',
+          color: '#5d4037',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+        }}>
+          <strong style={{ fontSize: '1rem', display: 'block', marginBottom: '8px' }}>⚠️ Troubleshooting:</strong> 
+          <p style={{ margin: '0 0 8px 0' }}>If you encounter connection issues, try adding Swell Chain to your wallet manually with these details:</p>
+          <div style={{ 
+            backgroundColor: 'rgba(255, 255, 255, 0.7)', 
+            padding: '10px', 
+            borderRadius: '4px',
+            marginTop: '8px'
+          }}>
+            <ul style={{ margin: '0', paddingLeft: '20px' }}>
+              <li><strong>Network Name:</strong> Swell Chain</li>
+              <li><strong>Chain ID:</strong> 1923</li>
+              <li><strong>RPC URL:</strong> https://swell-mainnet.alt.technology</li>
+              <li><strong>Symbol:</strong> ETH</li>
+              <li><strong>Block Explorer:</strong> https://swellexplorer.xyz</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      
+      <div className="wallet-section" style={{ display: 'flex', justifyContent: 'center', marginBottom: '25px' }}>
+        <ConnectWallet />
+      </div>
+      
+      <AmbientInteraction />
+    </div>
+  )
+}
+
+export default App
+
+
+/*****************************
+ * FILE: src/chains.ts
+ *****************************/
+
+import { type Chain } from 'viem';
+
+export const swell = {
+  id: 1923,
+  name: 'Swell Chain',
+  network: 'swell',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: {
+    default: { http: [
+      'https://swell-mainnet.alt.technology', 
+      'https://rpc.swellnetwork.xyz'
+    ] },
+    public: { http: [
+      'https://swell-mainnet.alt.technology', 
+      'https://rpc.swellnetwork.xyz'
+    ] },
+  },
+  blockExplorers: {
+    default: { name: 'SwellScan', url: 'https://swellexplorer.xyz' },
+  },
+  testnet: false,
+} as const satisfies Chain;
+
+/*****************************
+ * FILE: src/components/AmbientInteraction.tsx
+ *****************************/
+
+import React, { useState, useEffect } from 'react';
+import { formatUnits, parseUnits, ZeroAddress, Contract, MaxUint256 } from 'ethers';
+import * as ethers from 'ethers'; // Импортируем весь модуль ethers для Contract
+import { useAccount } from 'wagmi';
+import { useAmbientSDK } from '../hooks/useAmbientSDK';
+
+// Real token addresses on Swell Chain - Use ETH instead of WETH for native token
+const ETH_ADDRESS = ZeroAddress; // 0x0000000000000000000000000000000000000000 for native ETH
+const KING_SWELL = "0xc2606aade4bdd978a4fa5a6edb3b66657acee6f8"; // KING on Swell Chain
+
+// Ambient contract addresses on Swell
+const DEX_ADDRESS = "0xaAAaAaaa82812F0a1f274016514ba2cA933bF24D";
+
+export function AmbientInteraction() {
+  const { isConnected, address } = useAccount();
+  // Используем обновлённый хук, который сам управляет инициализацией
+  const { croc, signer, ready, error, isLoading: isSdkLoading } = useAmbientSDK();
+  
+  // SDK теперь объект с croc и signer
+  const sdk = ready && croc && signer ? { croc, signer } : null;
+  
+  const [tokenIn, setTokenIn] = useState(ETH_ADDRESS);
+  const [tokenOut, setTokenOut] = useState(KING_SWELL);
+  const [amountIn, setAmountIn] = useState("0.01");
+  const [lowerPrice, setLowerPrice] = useState("3000");
+  const [upperPrice, setUpperPrice] = useState("3500");
+  const [status, setStatus] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Обновляем статус при изменении состояния SDK
+  useEffect(() => {
+    if (error) {
+      setStatus(`Error: ${error}`);
+    } else if (ready && sdk) {
+      setStatus("SDK initialized and ready");
+    } else if (isSdkLoading) {
+      setStatus("Initializing SDK...");
+    }
+  }, [ready, error, isSdkLoading, sdk]);
+
+  // Helper for token approvals
+  async function approveToken(tokenAddress: string, amount: string, decimals: number = 18) {
+    // Проверка на нативный ETH, он не требует approve
+    if (tokenAddress.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+      setStatus("Native ETH does not require approval");
+      return true;
+    }
+    
+    // Проверка sdk и address
+    if (!sdk?.signer || !address) {
+      setStatus("Signer not available in SDK");
+      console.error("Signer not available in SDK", sdk);
+      return false;
+    }
+
+    // Получаем signer напрямую из sdk
+    const signer = sdk.signer;
+
+    try {
+      setStatus(`Approving ${tokenAddress}...`);
+
+      const erc20Interface = [
+        "function approve(address spender, uint256 amount) returns (bool)",
+        "function allowance(address owner, address spender) view returns (uint256)"
+      ];
+
+      // Создаем экземпляр контракта СРАЗУ с signer'ом
+      const contract = new Contract(tokenAddress, erc20Interface, signer);
+
+      // Проверяем текущий allowance
+      const currentAllowance = await contract.allowance(address, DEX_ADDRESS);
+      
+      // Обработка MaxUint256 для максимального одобрения
+      const amountBigInt = amount === MaxUint256.toString() 
+                          ? MaxUint256 
+                          : parseUnits(amount, decimals);
+
+      if (currentAllowance < amountBigInt) {
+        setStatus('Sending approval transaction...');
+        // Вызываем approve НАПРЯМУЮ (не нужен .connect(signer))
+        const tx = await contract.approve(DEX_ADDRESS, amountBigInt);
+        setStatus(`Approval transaction sent: ${tx.hash}. Waiting for confirmation...`);
+        await tx.wait(); // Дожидаемся подтверждения
+        
+        // Используем amount для отображения, если не MaxUint256
+        const displayAmount = amount === ethers.MaxUint256.toString() 
+                            ? "maximum" 
+                            : formatUnits(amountBigInt, decimals);
+        setStatus(`Approval successful for ${displayAmount} tokens`);
+        return true;
+      } else {
+        setStatus(`Token ${tokenAddress} already approved for sufficient amount`);
+        return true;
+      }
+    } catch (error: any) {
+      console.error("Approval failed:", error);
+      // Попытка извлечь более конкретную ошибку
+      const reason = error?.revert?.args?.[0] ?? error.message;
+      setStatus(`Approval failed: ${reason}`);
+      return false;
+    }
+  }
+
+  // Perform a swap
+  async function handleSwap() {
+    if (!sdk || !isConnected) {
+      setStatus("SDK not ready or wallet not connected");
+      return;
+    }
+    
+    setIsLoading(true);
+    setStatus("Processing swap...");
+    
+    try {
+      // Step 1: Approve token (if needed)
+      // Для ETH нет необходимости в approve
+      if (tokenIn.toLowerCase() !== ETH_ADDRESS.toLowerCase()) {
+        const decimalsIn = 18; // KING имеет 18 децималов
+        const approved = await approveToken(tokenIn, amountIn, decimalsIn);
+        if (!approved) return;
+      } else {
+        setStatus("Using native ETH, no approval needed");
+      }
+      
+      // Step 2: Выполняем своп
+      // CrocEnv.sell(tokenAddress, amount) - продаем указанный токен
+      // CrocEnv.sellEth(amount) - продаем нативный ETH
+      // CrocEnv.buy(tokenAddress, amount) - покупаем указанный токен
+      // CrocEnv.buyEth(amount) - покупаем нативный ETH
+      
+      let tx;
+      const amountInFloat = parseFloat(amountIn);
+      const slippage = 0.01; // 1%
+      
+      if (tokenIn.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+        // Продаем ETH, получаем KING
+        setStatus("Selling ETH for KING...");
+        tx = await sdk.croc.sellEth(amountInFloat).for(tokenOut, { slippage }).swap();
+      } else if (tokenOut.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+        // Продаем KING, получаем ETH
+        setStatus("Selling KING for ETH...");
+        tx = await sdk.croc.sell(tokenIn, amountInFloat).forEth({ slippage }).swap();
+      } else {
+        // Продаем один токен за другой (оба не ETH)
+        setStatus(`Selling ${tokenIn} for ${tokenOut}...`);
+        tx = await sdk.croc.sell(tokenIn, amountInFloat).for(tokenOut, { slippage }).swap();
+      }
+      
+      setStatus(`Swap transaction sent: ${tx.hash}. Waiting for confirmation...`);
+      await tx.wait();
+      setStatus(`Swap successful! Tx: ${tx.hash}`);
+    } catch (error: any) {
+      console.error("Swap failed:", error);
+      setStatus(`Swap failed: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // Add ambient liquidity
+  async function handleAddAmbientLiq() {
+    if (!sdk || !isConnected) {
+      setStatus("SDK not ready or wallet not connected");
+      return;
+    }
+    
+    setIsLoading(true);
+    setStatus("Processing Add Ambient Liquidity...");
+    
+    try {
+      // Step 1: Approve tokens (if не ETH)
+      if (tokenIn.toLowerCase() !== ETH_ADDRESS.toLowerCase()) {
+        const decimalsIn = 18; // KING имеет 18 децималов
+        const approved = await approveToken(tokenIn, amountIn, decimalsIn);
+        if (!approved) return;
+      }
+      
+      // Approve tokenOut if not ETH
+      if (tokenOut.toLowerCase() !== ETH_ADDRESS.toLowerCase()) {
+        const decimalsOut = 18; // KING имеет 18 децималов
+        await approveToken(tokenOut, "1", decimalsOut); // минимальное количество для апрува
+      }
+      
+      // Step 2: Add ambient liquidity
+      let tx;
+      const amountInFloat = parseFloat(amountIn);
+      const slippage = 0.01;
+      
+      try {
+        if (tokenIn.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+          // ETH -> KING, используем pool для ETH и ETH в качестве base токена
+          setStatus("Adding ambient liquidity with ETH as base token...");
+          // Для amountInFloat (ETH) не нужны дополнительные параметры диапазона цен
+          tx = await sdk.croc.pool(ETH_ADDRESS, tokenOut).mintAmbientBase(amountInFloat, { slippage });
+        } else if (tokenOut.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+          // KING -> ETH, используем pool для ETH и KING в качестве quote токена
+          setStatus("Adding ambient liquidity with KING as quote token...");
+          tx = await sdk.croc.pool(ETH_ADDRESS, tokenIn).mintAmbientQuote(amountInFloat, { slippage });
+        } else {
+          // Оба токена не ETH
+          setStatus(`Adding ambient liquidity for ${tokenIn}/${tokenOut}...`);
+          tx = await sdk.croc.pool(tokenIn, tokenOut).mintAmbientBase(amountInFloat, { slippage });
+        }
+      } catch (error) {
+        console.error("Failed initial ambient liquidity approach:", error);
+        
+        // Если первый подход не работает, попробуем альтернативный
+        setStatus("Trying alternative approach for adding ambient liquidity...");
+        if (tokenIn.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+          tx = await sdk.croc.sell(ETH_ADDRESS, amountInFloat).for(tokenOut).useBypass().swap();
+        } else if (tokenOut.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+          tx = await sdk.croc.sell(tokenIn, amountInFloat).forEth().useBypass().swap();
+        } else {
+          tx = await sdk.croc.sell(tokenIn, amountInFloat).for(tokenOut).useBypass().swap();
+        }
+      }
+      
+      setStatus(`Add Ambient Liq Tx sent: ${tx.hash}. Waiting...`);
+      await tx.wait();
+      setStatus(`Add Ambient Liq successful! Tx: ${tx.hash}`);
+    } catch (error: any) {
+      console.error("Add Ambient Liq failed:", error);
+      setStatus(`Add Ambient Liq failed: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // Add concentrated liquidity
+  async function handleAddConcLiq() {
+    if (!sdk || !isConnected) {
+      setStatus("SDK not ready or wallet not connected");
+      return;
+    }
+    
+    setIsLoading(true);
+    setStatus("Processing Add Concentrated Liquidity...");
+    
+    try {
+      // Step 1: Approve tokens (if не ETH)
+      if (tokenIn.toLowerCase() !== ETH_ADDRESS.toLowerCase()) {
+        const decimalsIn = 18; // KING имеет 18 децималов
+        const approved = await approveToken(tokenIn, amountIn, decimalsIn);
+        if (!approved) return;
+      }
+      
+      // Approve tokenOut if not ETH
+      if (tokenOut.toLowerCase() !== ETH_ADDRESS.toLowerCase()) {
+        const decimalsOut = 18; // KING имеет 18 децималов
+        await approveToken(tokenOut, "1", decimalsOut); // минимальное количество для апрува
+      }
+      
+      // Step 2: Add concentrated liquidity
+      const amountInFloat = parseFloat(amountIn);
+      const priceRange = [parseFloat(lowerPrice), parseFloat(upperPrice)];
+      const slippage = 0.01;
+      
+      let tx;
+      
+      try {
+        if (tokenIn.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+          // ETH -> KING
+          setStatus("Adding concentrated liquidity with ETH as base...");
+          // Используем обычный pool вместо poolEth
+          tx = await sdk.croc.pool(ETH_ADDRESS, tokenOut).mintConcBase(amountInFloat, priceRange, { slippage });
+        } else if (tokenOut.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+          // KING -> ETH
+          setStatus("Adding concentrated liquidity with KING as quote...");
+          tx = await sdk.croc.pool(ETH_ADDRESS, tokenIn).mintConcQuote(amountInFloat, priceRange, { slippage });
+        } else {
+          // Оба токена не ETH
+          setStatus(`Adding concentrated liquidity for ${tokenIn}/${tokenOut}...`);
+          
+          // Для определения baseToken и quoteToken, можно использовать стандартную логику:
+          // base токен - тот, у которого адрес меньше (как число)
+          const isTokenInBase = BigInt(tokenIn) < BigInt(tokenOut);
+          
+          if (isTokenInBase) {
+            tx = await sdk.croc.pool(tokenIn, tokenOut).mintConcBase(amountInFloat, priceRange, { slippage });
+          } else {
+            tx = await sdk.croc.pool(tokenIn, tokenOut).mintConcQuote(amountInFloat, priceRange, { slippage });
+          }
+        }
+      } catch (error) {
+        console.error("Failed initial concentrated liquidity approach:", error);
+        
+        // Если первый подход не работает, попробуем альтернативный
+        setStatus("Trying alternative approach for adding concentrated liquidity...");
+        if (tokenIn.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+          tx = await sdk.croc.sell(ETH_ADDRESS, amountInFloat).for(tokenOut).useBypass().swap();
+        } else if (tokenOut.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+          tx = await sdk.croc.sell(tokenIn, amountInFloat).forEth().useBypass().swap();
+        } else {
+          tx = await sdk.croc.sell(tokenIn, amountInFloat).for(tokenOut).useBypass().swap();
+        }
+      }
+      
+      setStatus(`Add Conc Liq Tx sent: ${tx.hash}. Waiting...`);
+      await tx.wait();
+      setStatus(`Add Conc Liq successful! Tx: ${tx.hash}`);
+    } catch (error: any) {
+      console.error("Add Conc Liq failed:", error);
+      setStatus(`Add Conc Liq failed: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+  
+  // Approve max tokens for easy testing
+  async function approveMaxTokenIn() {
+    if (!sdk || !isConnected) {
+      setStatus("SDK not ready or wallet not connected");
+      return;
+    }
+    
+    try {
+      // Проверка на нативный ETH
+      if (tokenIn.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+        setStatus("Native ETH does not require approval");
+        return;
+      }
+      
+      setStatus(`Approving max amount of ${tokenIn}...`);
+      // У ETH и KING одинаковые децималы - 18
+      const decimalsIn = 18;
+      await approveToken(tokenIn, MaxUint256.toString(), decimalsIn);
+      setStatus(`Max approval successful for ${tokenIn}`);
+    } catch (error: any) {
+      console.error("Max approval failed:", error);
+      setStatus(`Max approval failed: ${error.message}`);
+    }
+  }
+  
+  async function approveMaxTokenOut() {
+    if (!sdk || !isConnected) {
+      setStatus("SDK not ready or wallet not connected");
+      return;
+    }
+    
+    try {
+      // Проверка на нативный ETH
+      if (tokenOut.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+        setStatus("Native ETH does not require approval");
+        return;
+      }
+      
+      setStatus(`Approving max amount of ${tokenOut}...`);
+      // У ETH и KING одинаковые децималы - 18
+      const decimalsOut = 18;
+      await approveToken(tokenOut, MaxUint256.toString(), decimalsOut);
+      setStatus(`Max approval successful for ${tokenOut}`);
+    } catch (error: any) {
+      console.error("Max approval failed:", error);
+      setStatus(`Max approval failed: ${error.message}`);
+    }
+  }
+
+  if (!isConnected) {
+    return <p>Please connect your wallet to use Ambient DEX features.</p>;
+  }
+
+  return (
+    <div className="ambient-interaction">
+      <h3>Interact with Ambient DEX on Swell Chain</h3>
+      <div className={`status-box ${status.startsWith('Error') ? 'error' : status.includes('successful') ? 'success' : ''}`} 
+           style={{ color: status.startsWith('Error') ? '#c62828' : status.includes('successful') ? '#2e7d32' : '#333333' }}>
+        <strong>Status:</strong> {status}
+      </div>
+      
+      <div className="interaction-section">
+        <h4>Swap Tokens</h4>
+        <div className="form-group">
+          <label>Token In Address:</label>
+          <input 
+            type="text" 
+            value={tokenIn} 
+            onChange={(e) => setTokenIn(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        
+        <div className="form-group">
+          <label>Token Out Address:</label>
+          <input 
+            type="text" 
+            value={tokenOut} 
+            onChange={(e) => setTokenOut(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        
+        <div className="form-group">
+          <label>Amount In:</label>
+          <input 
+            type="text" 
+            value={amountIn} 
+            onChange={(e) => setAmountIn(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        
+        <div className="approval-buttons" style={{ marginBottom: '15px', display: 'flex', gap: '10px' }}>
+          <button 
+            onClick={approveMaxTokenIn} 
+            disabled={isLoading || isSdkLoading || !sdk}
+            style={{ 
+              backgroundColor: '#4caf50',
+              fontSize: '0.85rem',
+              padding: '8px 10px'
+            }}
+          >
+            Approve Max Token In
+          </button>
+          <button 
+            onClick={approveMaxTokenOut} 
+            disabled={isLoading || isSdkLoading || !sdk}
+            style={{ 
+              backgroundColor: '#4caf50',
+              fontSize: '0.85rem',
+              padding: '8px 10px'
+            }}
+          >
+            Approve Max Token Out
+          </button>
+        </div>
+        
+        <button 
+          onClick={handleSwap} 
+          disabled={isLoading || isSdkLoading || !sdk}
+        >
+          Swap Tokens
+        </button>
+      </div>
+      
+      <div className="interaction-section">
+        <h4>Add Ambient Liquidity</h4>
+        <p>Uses the same token pair and amount as above</p>
+        <button 
+          onClick={handleAddAmbientLiq} 
+          disabled={isLoading || isSdkLoading || !sdk}
+        >
+          Add Ambient Liquidity
+        </button>
+      </div>
+      
+      <div className="interaction-section">
+        <h4>Add Concentrated Liquidity</h4>
+        <div className="form-group">
+          <label>Lower Price:</label>
+          <input 
+            type="text" 
+            value={lowerPrice} 
+            onChange={(e) => setLowerPrice(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        
+        <div className="form-group">
+          <label>Upper Price:</label>
+          <input 
+            type="text" 
+            value={upperPrice} 
+            onChange={(e) => setUpperPrice(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        
+        <button 
+          onClick={handleAddConcLiq} 
+          disabled={isLoading || isSdkLoading || !sdk}
+        >
+          Add Concentrated Liquidity
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/*****************************
+ * FILE: src/components/ConnectWallet.tsx
+ *****************************/
+
+import { ConnectButton } from '@rainbow-me/rainbowkit';
+
+export function ConnectWallet() {
+  return (
+    <div className="wallet-controls">
+      <div style={{ margin: "0 auto" }}>
+        <ConnectButton showBalance={true} />
+      </div>
+      <p style={{ fontSize: '0.8rem', marginTop: '4px', textAlign: 'center' }}>
+        Click your account to disconnect
+      </p>
+    </div>
+  );
+}
+
+/*****************************
+ * FILE: src/hooks/useAmbientSDK.ts
+ *****************************/
+
+import { useState, useEffect } from 'react';
+import { type WalletClient, useWalletClient } from 'wagmi';
+// Импортируем основной класс CrocEnv из SDK
+import { CrocEnv } from '@crocswap-libs/sdk';
+import { BrowserProvider, JsonRpcSigner } from 'ethers';
+
+// Convert Viem WalletClient to Ethers v6 Signer
+export async function walletClientToSigner(walletClient: WalletClient): Promise<JsonRpcSigner> {
+  const { account, chain, transport } = walletClient;
+  const provider = new BrowserProvider(transport, chain?.id);
+  return provider.getSigner(account.address);
+}
+
+type SdkState = {
+  croc: CrocEnv | null;
+  signer: JsonRpcSigner | null;
+  ready: boolean;
+  error: string | null;
+  isLoading: boolean;
+}
+
+const initialState: SdkState = {
+  croc: null,
+  signer: null,
+  ready: false,
+  error: null,
+  isLoading: false
+};
+
+export function useAmbientSDK() {
+  const { data: walletClient } = useWalletClient();
+  const [sdkState, setSdkState] = useState<SdkState>(initialState);
+
+  useEffect(() => {
+    // Сбрасываем состояние, если кошелек отключен
+    if (!walletClient) {
+      setSdkState({ 
+        ...initialState, 
+        error: "Wallet not connected" 
+      });
+      return;
+    }
+
+    const initSdk = async () => {
+      setSdkState(prev => ({ ...prev, isLoading: true, error: null })); // Начинаем загрузку
+      try {
+        // Проверка аккаунта
+        if (!walletClient.account || !walletClient.account.address) {
+          throw new Error("Invalid account: no account address available");
+        }
+
+        // Проверка сети
+        if (!walletClient.chain || walletClient.chain.id !== 1923) {
+          throw new Error(`Connected to wrong chain: ${walletClient.chain?.id || 'unknown'} (should be 1923 Swell Chain)`);
+        }
+
+        // Получаем signer из walletClient
+        const signer = await walletClientToSigner(walletClient).catch(err => {
+          console.error("Failed to get signer:", err);
+          throw new Error("Failed to initialize signer: " + err.message);
+        });
+        
+        // Создаем экземпляр CrocEnv с указанием сети "swell" и signer'а
+        try {
+          console.log('Creating CrocEnv instance with signer:', signer);
+          
+          // Создаем экземпляр CrocEnv
+          // Первый параметр - сеть, второй - signer
+          const croc = new CrocEnv("swell", signer);
+          console.log('Successfully created CrocEnv instance:', croc);
+          
+          if (croc) {
+            console.log("Successfully created SDK instance:", croc);
+            setSdkState({ 
+              croc, 
+              signer, 
+              ready: true, 
+              error: null, 
+              isLoading: false 
+            });
+          } else {
+            throw new Error('Failed to create SDK instance through any available method');
+          }
+        } catch (error) {
+          console.error("Failed to initialize SDK:", error);
+          throw error; // Пробросим ошибку для обработки выше
+        }
+      } catch (error: any) {
+        const errorMsg = error?.message || "Unknown error";
+        console.error("Failed to initialize Ambient SDK:", errorMsg);
+        setSdkState({ 
+          croc: null, 
+          signer: null, 
+          ready: false, 
+          error: errorMsg, 
+          isLoading: false 
+        });
+      }
+    };
+
+    // Запускаем инициализацию SDK при изменении walletClient
+    initSdk();
+  }, [walletClient]);
+
+  return sdkState;
+}
+
+/*****************************
+ * FILE: src/index.css
+ *****************************/
+
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  /* Fix to ensure text is always visible - forcing light mode */
+  color-scheme: light;
+  color: #213547;
+  background-color: #ffffff;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #f9f9f9;
+  color: #213547;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: #646cff;
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}
+
+
+/*****************************
+ * FILE: src/main.tsx
+ *****************************/
+
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { WagmiProvider } from 'wagmi'
+import { RainbowKitProvider } from '@rainbow-me/rainbowkit'
+import '@rainbow-me/rainbowkit/styles.css'
+
+import './index.css'
+import App from './App.tsx'
+import { config } from './wagmi'
+
+const queryClient = new QueryClient()
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider 
+          initialChain={1923}
+          showRecentTransactions={true}
+          mode="light"
+        >
+          <App />
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
+  </StrictMode>,
+)
+
+
+/*****************************
+ * FILE: src/wagmi.ts
+ *****************************/
+
+import { getDefaultConfig } from '@rainbow-me/rainbowkit';
+import { swell } from './chains';
+import { http } from 'viem';
+
+export const config = getDefaultConfig({
+  appName: 'Ambient DEX Demo',
+  projectId: '427e30b4efbb68e836c169bd764b35a0', // WalletConnect project ID
+  chains: [swell], // Only include Swell chain
+  transports: {
+    [swell.id]: http(swell.rpcUrls.default.http[0]),
+  },
+  enableTheming: false,
+});
+
