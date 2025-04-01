@@ -342,6 +342,14 @@ export function AmbientInteraction() {
       // Calculate price range from UI inputs
       const lowerPriceVal = parseFloat(lowerPrice);
       const upperPriceVal = parseFloat(upperPrice);
+      
+      if (isNaN(lowerPriceVal) || isNaN(upperPriceVal)) {
+        setStatus("Error: Please enter valid numeric values for price range");
+        setIsLoading(false);
+        return;
+      }
+      
+      // Ensure lower is always less than upper
       const sortedPriceRange = [Math.min(lowerPriceVal, upperPriceVal), Math.max(lowerPriceVal, upperPriceVal)];
       
       // Определим какой токен base, какой quote
@@ -365,7 +373,7 @@ export function AmbientInteraction() {
         }
         
         // Выводим информацию о пуле
-        console.log("Pool created:", pool);
+        console.log("Pool created:");
         console.log("Base token:", pool.baseToken.tokenAddr);
         console.log("Quote token:", pool.quoteToken.tokenAddr);
         
@@ -373,277 +381,216 @@ export function AmbientInteraction() {
         const usingBaseToken = tokenIn.toLowerCase() === pool.baseToken.tokenAddr.toLowerCase();
         console.log("Using base token:", usingBaseToken);
         
-        // Для concentrated liquidity нам нужно конвертировать цены в тики
-        // Получаем текущую цену для информации
+        // Get current display price and spot price
+        const currentDisplayPrice = await pool.displayPrice();
+        console.log("Current display price:", currentDisplayPrice);
+        
         const currentSpotPrice = await pool.spotPrice();
         console.log("Current spot price:", currentSpotPrice);
         
-        // Для проверки выведем текущий тик
+        // Get current tick for reference
         const currentTick = await pool.spotTick();
         console.log("Current tick:", currentTick);
         
-        // Пробуем также получить текущий тик через displayToNeighborTicks
+        setStatus(`Current price: ${currentDisplayPrice.toFixed(2)}, getting valid tick range...`);
+        
+        // First try: Use SDK's displayToNeighborTicks for proper tick spacing
+        let validTickRange;
         try {
-          const currentDisplayPrice = await pool.displayPrice();
-          console.log("Current display price:", currentDisplayPrice);
+          // Get neighboring ticks that respect the protocol's tick spacing
           const neighborTicks = await pool.displayToNeighborTicks(currentDisplayPrice);
-          console.log("Neighbor ticks:", neighborTicks);
-        } catch (tickError) {
-          console.error("Error fetching neighbor ticks:", tickError);
-        }
-        
-        // Конвертируем цены в тики - используем подход log base 1.0001
-        
-        // Issue with the "D" error is likely due to tick spacing requirements
-        // Ambient DEX (CrocSwap) likely requires ticks to be on specific spacings
-        
-        // Use the current tick we already obtained above
-        console.log("Working with current tick:", currentTick);
-        
-        // Create super narrow range very close to current tick
-        // Try extremely narrow ranges for best chance of success
-        // Try a super tight range of just ±1 tick (minimum possible range)
-        const superTightRange = [currentTick - 1, currentTick + 1];
-        console.log("Super tight range (±1 from current):", superTightRange);
-        
-        // Try a very narrow range of just ±5 ticks from current tick
-        const narrowTickRange = [currentTick - 5, currentTick + 5];
-        console.log("Narrow tick range (±5 from current):", narrowTickRange);
-        
-        // Very conservative tick range (±20)
-        const conservativeTickRange = [currentTick - 20, currentTick + 20];
-        console.log("Conservative tick range (±20 from current):", conservativeTickRange);
-        
-        // Create tick range based on neighbors of current tick
-        // This should respect tick spacing requirements of the protocol
-        let neighborTickRange;
-        try {
-          const currentDisplayPrice = await pool.displayPrice();
-          console.log("Current display price:", currentDisplayPrice);
-          const neighborTicks = await pool.displayToNeighborTicks(currentDisplayPrice);
-          console.log("Neighbor ticks:", neighborTicks);
+          console.log("Neighbor ticks from SDK:", neighborTicks);
           
-          // Use the neighbor ticks if available (these should respect spacing)
-          if (neighborTicks && neighborTicks.length >= 2) {
-            // Sort neighbor ticks to ensure proper order
-            neighborTickRange = [
-              Math.min(neighborTicks[0], neighborTicks[1]), 
-              Math.max(neighborTicks[0], neighborTicks[1])
-            ];
-            console.log("Using neighbor tick range:", neighborTickRange);
+          // Find ticks that are closest to our desired price range
+          // Convert user price range to ticks for comparison
+          const userLowerTick = Math.floor(Math.log(Math.sqrt(lowerPriceVal)) / Math.log(1.0001));
+          const userUpperTick = Math.ceil(Math.log(Math.sqrt(upperPriceVal)) / Math.log(1.0001));
+          
+          // Find the closest valid lower and upper ticks to user's range
+          let lowerValidTick = null;
+          let upperValidTick = null;
+          
+          // Sort ticks in ascending order
+          const sortedTicks = [...neighborTicks].sort((a, b) => a - b);
+          
+          // Find lower tick (closest valid tick below or equal to userLowerTick)
+          for (const tick of sortedTicks) {
+            if (tick <= userLowerTick) {
+              lowerValidTick = tick;
+            } else {
+              break;
+            }
           }
-        } catch (tickError) {
-          console.error("Error fetching neighbor ticks:", tickError);
-          // Continue with other approaches if this fails
-        }
-        
-        // Try different tick spacing values - Ambient/CrocSwap likely has specific requirements
-        // Common tick spacing values are: 1, 10, 60, 200 (based on different fee tiers in Uniswap V3)
-        const tickSpacingRanges = [];
-        
-        // Try with tick spacing = 1 (finest granularity)
-        const spacing1 = 1;
-        tickSpacingRanges.push([
-          Math.floor(currentTick / spacing1) * spacing1 - spacing1,
-          Math.ceil(currentTick / spacing1) * spacing1 + spacing1
-        ]);
-        
-        // Try with tick spacing = 10 (0.1% fee tier in Uniswap V3)
-        const spacing10 = 10;
-        tickSpacingRanges.push([
-          Math.floor(currentTick / spacing10) * spacing10 - spacing10,
-          Math.ceil(currentTick / spacing10) * spacing10 + spacing10
-        ]);
-        
-        // Try with tick spacing = 60 (0.3% fee tier in Uniswap V3)
-        const spacing60 = 60;
-        tickSpacingRanges.push([
-          Math.floor(currentTick / spacing60) * spacing60 - spacing60,
-          Math.ceil(currentTick / spacing60) * spacing60 + spacing60
-        ]);
-        
-        // Try with tick spacing = 200 (1% fee tier in Uniswap V3)
-        const spacing200 = 200;
-        tickSpacingRanges.push([
-          Math.floor(currentTick / spacing200) * spacing200 - spacing200,
-          Math.ceil(currentTick / spacing200) * spacing200 + spacing200
-        ]);
-        
-        console.log("Generated tick spacing ranges:", tickSpacingRanges);
-        
-        // Old approach for reference but not primary
-        // Precompute ticks from price using logarithmic formula
-        const lowerPriceSqrt = Math.sqrt(sortedPriceRange[0]);
-        const upperPriceSqrt = Math.sqrt(sortedPriceRange[1]);
-        const lowerTick = Math.floor(Math.log(lowerPriceSqrt) / Math.log(1.0001));
-        const upperTick = Math.ceil(Math.log(upperPriceSqrt) / Math.log(1.0001));
-        const userTickRange = [lowerTick, upperTick]; 
-        console.log("User-provided tick range:", userTickRange);
-        
-        // Try to use SDK-provided methods to get valid tick ranges
-        let sdkTickRange;
-        try {
-          // Check if there's a direct SDK method for calculating valid ticks
-          if (typeof pool.getValidTicks === 'function') {
-            console.log("Using pool.getValidTicks() to get valid tick range");
-            const validTicks = await pool.getValidTicks(currentTick, 2); // Get 2 ticks around current
-            sdkTickRange = [Math.min(...validTicks), Math.max(...validTicks)];
-            console.log("SDK valid tick range:", sdkTickRange);
-          } else if (typeof pool.nearestValidTicks === 'function') {
-            console.log("Using pool.nearestValidTicks() to get valid tick range");
-            const validTicks = await pool.nearestValidTicks(currentTick, 2);
-            sdkTickRange = [Math.min(...validTicks), Math.max(...validTicks)];
-            console.log("SDK valid tick range:", sdkTickRange);
-          } else if (typeof sdk.croc.tickMath === 'object' && typeof sdk.croc.tickMath.getValidTicks === 'function') {
-            console.log("Using sdk.croc.tickMath.getValidTicks()");
-            const validTicks = await sdk.croc.tickMath.getValidTicks(currentTick, 2);
-            sdkTickRange = [Math.min(...validTicks), Math.max(...validTicks)];
-            console.log("SDK tickMath valid range:", sdkTickRange);
+          
+          // If no valid tick found below userLowerTick, use the lowest available
+          if (lowerValidTick === null && sortedTicks.length > 0) {
+            lowerValidTick = sortedTicks[0];
           }
-        } catch (sdkTickError) {
-          console.error("Error getting SDK tick range:", sdkTickError);
-        }
-        
-        // Create a tick range array with all our calculated ranges in priority order
-        const tickRangeOptions = [
-          sdkTickRange,      // SDK-provided tick range (most likely to work if available)
-          neighborTickRange, // Use neighbor ticks if available (most likely to work)
-          superTightRange,   // Extremely narrow range (±1 tick)
-          narrowTickRange,   // Very narrow range (±5 ticks)
-          ...tickSpacingRanges, // Try all our different tick spacing ranges
-          conservativeTickRange, // Slightly wider but still conservative
-          [currentTick - 100, currentTick + 100], // Wider range around current tick
-          userTickRange      // User provided range (least likely to work)
-        ].filter(range => range !== undefined);
-        
-        console.log("Will try tick ranges in this order:", tickRangeOptions);
-        
-        // Используем широкие пределы цен для исполнения (slippage protection)
-        const priceLimits = [currentSpotPrice * 0.5, currentSpotPrice * 1.5];
-        console.log("Price limits:", priceLimits);
-        
-        // Преобразуем диапазон цен в диапазон отображаемых цен
-        const dispPriceLimits = await Promise.all(priceLimits.map(p => pool.toDisplayPrice(p)));
-        console.log("Display price limits:", dispPriceLimits);
-        
-        setStatus(`Adding ${testAmount} ${usingBaseToken ? 'base' : 'quote'} token as concentrated liquidity...`);
-        
-        // Get transaction details before sending
-        let txDetails;
-        let successfulRange = null;
-        
-        // Try each tick range option until one works
-        for (const [index, rangeOption] of tickRangeOptions.entries()) {
-          try {
-            console.log(`\nAttempting with tick range option ${index + 1}:`, rangeOption);
+          
+          // Find upper tick (closest valid tick above or equal to userUpperTick)
+          for (const tick of [...sortedTicks].reverse()) {
+            if (tick >= userUpperTick) {
+              upperValidTick = tick;
+            } else {
+              break;
+            }
+          }
+          
+          // If no valid tick found above userUpperTick, use the highest available
+          if (upperValidTick === null && sortedTicks.length > 0) {
+            upperValidTick = sortedTicks[sortedTicks.length - 1];
+          }
+          
+          // Ensure we have valid ticks and proper order
+          if (lowerValidTick !== null && upperValidTick !== null && lowerValidTick < upperValidTick) {
+            validTickRange = [lowerValidTick, upperValidTick];
+            console.log("Found valid tick range based on user price range:", validTickRange);
             
-            // Use pool.mintRange* methods to get transaction details
+            // Convert these ticks back to prices for display
+            const lowerTickPrice = Math.pow(1.0001, lowerValidTick);
+            const upperTickPrice = Math.pow(1.0001, upperValidTick);
+            console.log("Price range from valid ticks:", [
+              lowerTickPrice * lowerTickPrice, 
+              upperTickPrice * upperTickPrice
+            ]);
+          } else {
+            console.log("Could not find valid tick range from neighbor ticks");
+          }
+        } catch (error) {
+          console.error("Error getting neighbor ticks:", error);
+        }
+        
+        // Second try: Try tick ranges based on spot tick if first method fails
+        if (!validTickRange) {
+          // If we couldn't get a valid range from displayToNeighborTicks,
+          // try these fallback ranges in order of preference
+          
+          // Try to find tick spacing by examining the neighbor ticks we received
+          let tickSpacing = 10; // Default to 10 as a common value
+          try {
+            const nearTicks = await pool.displayToNeighborTicks(currentDisplayPrice, 5);
+            if (nearTicks.length >= 2) {
+              // Calculate the minimum difference between consecutive ticks
+              const sortedTicks = [...nearTicks].sort((a, b) => a - b);
+              for (let i = 1; i < sortedTicks.length; i++) {
+                const spacing = sortedTicks[i] - sortedTicks[i-1];
+                if (spacing > 0 && (tickSpacing === 10 || spacing < tickSpacing)) {
+                  tickSpacing = spacing;
+                }
+              }
+              console.log("Detected tick spacing:", tickSpacing);
+            }
+          } catch (e) {
+            console.error("Error detecting tick spacing:", e);
+          }
+          
+          // Generate aligned tick ranges
+          const alignedTickRange = [
+            Math.floor(currentTick / tickSpacing) * tickSpacing - tickSpacing,
+            Math.ceil(currentTick / tickSpacing) * tickSpacing + tickSpacing
+          ];
+          console.log("Aligned tick range with spacing", tickSpacing, ":", alignedTickRange);
+          
+          // Super narrow range
+          const narrowTickRange = [
+            Math.floor(currentTick / tickSpacing) * tickSpacing,
+            Math.ceil(currentTick / tickSpacing) * tickSpacing
+          ];
+          if (narrowTickRange[0] === narrowTickRange[1]) {
+            // If they're the same tick, offset the upper one
+            narrowTickRange[1] += tickSpacing;
+          }
+          console.log("Narrow aligned tick range:", narrowTickRange);
+          
+          // Try these ranges in order
+          validTickRange = narrowTickRange;
+        }
+        
+        // If we still don't have a valid range, try the super tight approach as last resort
+        if (!validTickRange) {
+          validTickRange = [currentTick - 1, currentTick + 1];
+          console.log("Using super tight range as last resort:", validTickRange);
+        }
+        
+        // Set price limits for slippage protection
+        // Using current spot price ±15% should be safe for execution
+        const priceLimits = [currentSpotPrice * 0.85, currentSpotPrice * 1.15];
+        console.log("Using price limits for slippage protection:", priceLimits);
+        
+        // Display feedback to user about tick range translation
+        setStatus(`Adding liquidity in range [${lowerPriceVal}-${upperPriceVal}] using valid tick range [${validTickRange[0]}, ${validTickRange[1]}]...`);
+        
+        // Execute the transaction
+        let tx;
+        
+        try {
+          console.log("Executing concentrated liquidity transaction...");
+          
+          if (usingBaseToken) {
+            // Добавляем ликвидность, используя base token (e.g., ETH)
+            tx = await pool.mintRangeBase(
+              amountInFloat, 
+              validTickRange, 
+              priceLimits, 
+              { surplus: false }
+            );
+          } else {
+            // Добавляем ликвидность, используя quote token (e.g., KING)
+            tx = await pool.mintRangeQuote(
+              amountInFloat, 
+              validTickRange, 
+              priceLimits, 
+              { surplus: false }
+            );
+          }
+          
+          setStatus(`Add Conc Liq Tx sent: ${tx.hash}. Waiting...`);
+          console.log("Transaction hash:", tx.hash);
+          
+          await tx.wait();
+          setStatus(`Add Conc Liq successful! Tx: ${tx.hash}`);
+          
+        } catch (txError) {
+          console.error("Transaction failed:", txError);
+          
+          // If it's a "D" error, try again with an even narrower range
+          if (txError.message.includes("reverted: 'D'")) {
+            console.log("Received 'D' error, trying with minimum possible range...");
+            
+            // Try with a single-spacing range right at current tick
+            const lastResortRange = [
+              Math.floor(currentTick / tickSpacing) * tickSpacing,
+              Math.floor(currentTick / tickSpacing) * tickSpacing + tickSpacing
+            ];
+            console.log("Last resort tick range:", lastResortRange);
+            
+            setStatus("First attempt failed. Trying with minimum possible range...");
+            
             if (usingBaseToken) {
-              const method = 'mintRangeBase';
-              console.log(`Preparing transaction: ${method}(${amountInFloat}, [${rangeOption[0]}, ${rangeOption[1]}], [${priceLimits[0]}, ${priceLimits[1]}], { surplus: false })`);
-              txDetails = await pool.mintRangeBase.populateTransaction(
+              tx = await pool.mintRangeBase(
                 amountInFloat, 
-                rangeOption, 
+                lastResortRange, 
                 priceLimits, 
                 { surplus: false }
               );
             } else {
-              const method = 'mintRangeQuote';
-              console.log(`Preparing transaction: ${method}(${amountInFloat}, [${rangeOption[0]}, ${rangeOption[1]}], [${priceLimits[0]}, ${priceLimits[1]}], { surplus: false })`);
-              txDetails = await pool.mintRangeQuote.populateTransaction(
+              tx = await pool.mintRangeQuote(
                 amountInFloat, 
-                rangeOption, 
+                lastResortRange, 
                 priceLimits, 
                 { surplus: false }
               );
             }
             
-            // Log transaction details for debugging
-            console.log(`=== TRANSACTION DETAILS FOR RANGE OPTION ${index + 1} ===`);
-            console.log("From:", address);
-            console.log("To:", txDetails.to);
-            console.log("Value:", txDetails.value?.toString() || "0");
-            console.log("Data:", txDetails.data);
-            console.log("=== END TRANSACTION DETAILS ===");
+            setStatus(`Second attempt succeeded! Tx: ${tx.hash}. Waiting...`);
+            await tx.wait();
+            setStatus(`Add Conc Liq successful with minimum range! Tx: ${tx.hash}`);
             
-            // If we get here, the range is potentially valid
-            successfulRange = rangeOption;
-            console.log(`✅ Tick range option ${index + 1} looks valid!`);
-            break;
-            
-          } catch (rangeError) {
-            console.error(`❌ Error with tick range option ${index + 1}:`, rangeError.message);
-            // Continue to the next range option
-          }
-        }
-        
-        if (!successfulRange) {
-          throw new Error("All tick range options failed - could not find valid tick range");
-        }
-        
-        console.log("Using successful tick range:", successfulRange);
-        setStatus(`Adding concentrated liquidity with tick range [${successfulRange[0]}, ${successfulRange[1]}]...`);
-        
-        // Вызываем соответствующий метод для добавления концентрированной ликвидности
-        let tx;
-        
-        try {
-          console.log("Submitting transaction with successful tick range...");
-          
-          // Try using smaller slippage here to avoid issues
-          const tightPriceLimits = [currentSpotPrice * 0.9, currentSpotPrice * 1.1]; 
-          console.log("Using tight price limits for execution:", tightPriceLimits);
-          
-          if (usingBaseToken) {
-            // Добавляем ликвидность, используя base token
-            tx = await pool.mintRangeBase(
-              amountInFloat, 
-              successfulRange, 
-              tightPriceLimits, // Use tight price limits
-              { surplus: false }
-            );
           } else {
-            // Добавляем ликвидность, используя quote token
-            tx = await pool.mintRangeQuote(
-              amountInFloat, 
-              successfulRange, 
-              tightPriceLimits, // Use tight price limits
-              { surplus: false }
-            );
+            // Re-throw other errors
+            throw txError;
           }
-        } catch (submissionError) {
-          console.error("Error submitting transaction:", submissionError);
-          
-          // Special handling for 'D' error
-          if (submissionError.message.includes("reverted: 'D'")) {
-            console.log("=== 'D' ERROR DETAILS ===");
-            console.log("Current tick:", currentTick);
-            console.log("Using tick range:", successfulRange);
-            console.log("Tick spacing check:", successfulRange[0] % 10, successfulRange[1] % 10);
-            console.log("Price limits:", tightPriceLimits);
-            console.log("Base token:", pool?.baseToken?.tokenAddr);
-            console.log("Quote token:", pool?.quoteToken?.tokenAddr);
-            console.log("Adding liquidity as:", usingBaseToken ? "base" : "quote");
-            console.log("========================");
-            
-            throw new Error(
-              "Error 'D' usually indicates an invalid tick range or price limit. " +
-              "The contract is rejecting the input parameters. " +
-              "Current tick is " + currentTick + ". " +
-              "We tried tick range [" + successfulRange[0] + ", " + successfulRange[1] + "]. " +
-              "Try selecting smaller price range inputs or refer to console for diagnostic info."
-            );
-          }
-          
-          // Rethrow the original error
-          throw submissionError;
         }
-        
-        setStatus(`Add Conc Liq Tx sent: ${tx.hash}. Waiting...`);
-        console.log("Transaction hash:", tx.hash);
-        
-        await tx.wait();
-        setStatus(`Add Conc Liq successful! Tx: ${tx.hash}`);
         
       } catch (poolError) {
         console.error("Error working with pool:", poolError);
@@ -663,19 +610,8 @@ export function AmbientInteraction() {
       } else if (errorMessage.includes("execution reverted: 'D'") || errorMessage.includes("reverted: 'D'")) {
         // Special handling for the specific 'D' error
         errorMessage = "Transaction reverted with 'D' error - this typically indicates an invalid tick range. " +
-          "The range may be too wide, not aligned with tick spacing, or outside allowed bounds. " +
-          "Current tick is around " + currentTick + ". Try a very narrow range close to this tick.";
-          
-        console.log("=== DIAGNOSTIC INFO FOR 'D' ERROR ===");
-        console.log("Current tick:", currentTick);
-        console.log("Pool base token:", pool?.baseToken?.tokenAddr);
-        console.log("Pool quote token:", pool?.quoteToken?.tokenAddr);
-        console.log("Using base token:", usingBaseToken);
-        console.log("Successful tick range tried:", successfulRange);
-        console.log("All attempted tick ranges:", tickRangeOptions);
-        console.log("Price limits used:", priceLimits);
-        console.log("Spot price:", currentSpotPrice);
-        console.log("===============================");
+          "The 'D' error usually means the ticks aren't properly aligned with the required tick spacing or the range is too wide/narrow. " +
+          "Try a very narrow range close to the current price.";
       } else if (errorMessage.includes("execution reverted")) {
         // Extract the revert reason if available
         const revertMatch = errorMessage.match(/reverted: (.+?)(?:,|$)/);
