@@ -406,9 +406,43 @@ export function AmbientInteraction() {
             console.log("Using pool.displayToPinTick() to get valid ticks");
             // This function is mentioned in the SDK code and should convert display prices to valid ticks
             try {
-              const lowerTick = await pool.displayToPinTick(lowerPriceVal, 'lower');
-              const upperTick = await pool.displayToPinTick(upperPriceVal, 'upper');
+              const lowerTickResult = await pool.displayToPinTick(lowerPriceVal, 'lower');
+              const upperTickResult = await pool.displayToPinTick(upperPriceVal, 'upper');
+              
+              console.log("Raw lower tick result:", lowerTickResult);
+              console.log("Raw upper tick result:", upperTickResult);
+              
+              // Extract actual tick values - handle if they're nested arrays
+              let lowerTick, upperTick;
+              
+              // Handle different return formats
+              if (Array.isArray(lowerTickResult) && Array.isArray(lowerTickResult[0])) {
+                // It's returning nested arrays like [[tick1, tick2]]
+                lowerTick = lowerTickResult[0][0]; // First element of first array
+              } else if (Array.isArray(lowerTickResult)) {
+                // It's returning an array like [tick1, tick2]
+                lowerTick = lowerTickResult[0]; // First element
+              } else {
+                // It's returning a single value
+                lowerTick = lowerTickResult;
+              }
+              
+              if (Array.isArray(upperTickResult) && Array.isArray(upperTickResult[0])) {
+                // It's returning nested arrays like [[tick1, tick2]]
+                upperTick = upperTickResult[0][1]; // Second element of first array
+              } else if (Array.isArray(upperTickResult)) {
+                // It's returning an array like [tick1, tick2]
+                upperTick = upperTickResult[upperTickResult.length - 1]; // Last element
+              } else {
+                // It's returning a single value
+                upperTick = upperTickResult;
+              }
+              
+              console.log("Extracted lower tick:", lowerTick);
+              console.log("Extracted upper tick:", upperTick);
+              
               if (lowerTick !== undefined && upperTick !== undefined && lowerTick < upperTick) {
+                // Create a simple [lower, upper] array with integers
                 validTickRange = [lowerTick, upperTick];
                 console.log("Found valid tick range using displayToPinTick:", validTickRange);
               }
