@@ -1,3 +1,7 @@
+/*****************************
+ * FILE: src/App.css
+ *****************************/
+
 #root {
   max-width: 1280px;
   margin: 0 auto;
@@ -7,6 +11,14 @@
 :root {
   --primary-color: #646cff;
   --border-color: #ddd;
+  --success-color: #2e7d32;
+  --success-background: #e8f5e9;
+  --success-border: #c8e6c9;
+  --error-color: #c62828;
+  --error-background: #ffebee;
+  --error-border: #ffcdd2;
+  --warning-background: #fff8e1;
+  --warning-border: #ffe082;
 }
 
 .app-container {
@@ -22,11 +34,11 @@
 
 .wallet-section {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 20px;
+  justify-content: center; /* Center the button */
+  margin-bottom: 25px;
 }
 
-.ambient-interaction {
+.ambient-interaction-container {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 20px;
@@ -46,34 +58,44 @@
   word-break: break-word;
   max-height: 200px;
   overflow-y: auto;
+  transition: background-color 0.3s, border-color 0.3s, color 0.3s;
 }
 
 /* Error state for status box */
 .status-box.error {
-  background-color: #ffebee;
-  border-color: #ffcdd2;
-  color: #c62828;
+  background-color: var(--error-background);
+  border-color: var(--error-border);
+  color: var(--error-color);
   font-weight: 600;
-  border-left: 4px solid #c62828;
+  border-left: 4px solid var(--error-color);
 }
 
 /* Success state for status box */
 .status-box.success {
-  background-color: #e8f5e9;
-  border-color: #c8e6c9;
-  color: #2e7d32;
+  background-color: var(--success-background);
+  border-color: var(--success-border);
+  color: var(--success-color);
   font-weight: 600;
-  border-left: 4px solid #2e7d32;
+  border-left: 4px solid var(--success-color);
 }
 
 .interaction-section {
   margin-bottom: 30px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 20px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: #fff;
+}
+.interaction-section:last-child {
+   margin-bottom: 0;
 }
 
-.interaction-section:last-child {
-  border-bottom: none;
+.interaction-section h4 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: var(--primary-color);
+  border-bottom: 1px solid #eee;
+  padding-bottom: 8px;
 }
 
 .form-group {
@@ -88,7 +110,7 @@
   font-weight: bold;
 }
 
-input {
+input[type="text"], input[type="number"] {
   padding: 8px 12px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
@@ -103,7 +125,7 @@ button {
   padding: 10px 16px;
   cursor: pointer;
   font-size: 1rem;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, opacity 0.2s;
 }
 
 button:hover:not(:disabled) {
@@ -112,5 +134,46 @@ button:hover:not(:disabled) {
 
 button:disabled {
   background-color: #b3b3b3;
+  opacity: 0.7;
   cursor: not-allowed;
+}
+
+/* Specific button styles */
+.approve-button {
+  background-color: #4caf50; /* Green */
+  font-size: 0.9rem;
+  padding: 8px 12px;
+  margin-top: 5px;
+}
+.approve-button:hover:not(:disabled) {
+  background-color: #43a047;
+}
+
+.info-box {
+  margin-top: 15px;
+  padding: 10px 15px;
+  background-color: var(--warning-background);
+  border-left: 4px solid var(--warning-border);
+  border-radius: 4px;
+  font-size: 0.9rem;
+  color: #5d4037;
+}
+.info-box strong {
+    color: #ef6c00;
+}
+
+.approval-status {
+    font-size: 0.85rem;
+    margin-top: 5px;
+    font-weight: 500;
+}
+.approval-status.checked { color: var(--success-color); }
+.approval-status.not-checked { color: var(--error-color); }
+.approval-status.checking { color: #ffa000; } /* Orange for checking */
+
+.token-pair-display {
+  font-weight: bold;
+  margin-bottom: 15px;
+  text-align: center;
+  font-size: 1.1rem;
 }

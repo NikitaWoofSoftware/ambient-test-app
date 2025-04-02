@@ -1,3 +1,7 @@
+/*****************************
+ * FILE: src/index.css
+ *****************************/
+
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -6,7 +10,7 @@
   /* Fix to ensure text is always visible - forcing light mode */
   color-scheme: light;
   color: #213547;
-  background-color: #ffffff;
+  background-color: #f4f6f8; /* Slightly off-white background */
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -25,17 +29,24 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
+  display: flex; /* Use flex for centering */
+  justify-content: center; /* Center content horizontally */
   min-height: 100vh;
+  background-color: #f4f6f8; /* Match root background */
 }
 
+#root {
+    width: 100%; /* Allow root to expand */
+}
+
+
 h1 {
-  font-size: 3.2em;
+  font-size: 2.5em; /* Slightly smaller H1 */
   line-height: 1.1;
 }
 
+/* Default button styles from App.css take precedence,
+   but we can keep some base styles */
 button {
   border-radius: 8px;
   border: 1px solid transparent;
@@ -43,28 +54,27 @@ button {
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #f9f9f9;
-  color: #213547;
+  /* background-color: #f9f9f9; */ /* Override in App.css */
+  /* color: #213547; */ /* Override in App.css */
   cursor: pointer;
   transition: border-color 0.25s;
 }
-button:hover {
-  border-color: #646cff;
+button:hover:not(:disabled) {
+   /* border-color: #646cff; */ /* Can be added or handled by App.css */
 }
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+/* Ensure light mode overrides */
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
-    background-color: #ffffff;
+    background-color: #f4f6f8;
   }
   a:hover {
     color: #747bff;
   }
-  button {
-    background-color: #f9f9f9;
-  }
+  /* button { background-color: #f9f9f9; } */ /* Let App.css handle specifics */
 }
